@@ -20,40 +20,37 @@ saveLaunchToDB(launch)
 
 const SPACEX_API_URL = 'https://api.spacexdata.com/v4/launches/query'
 
-async function loadLaunchData() {
-    await findLaunch({
-        flightNumber:1,
-        rocket:'Falcon1',
-        mission: 'FalconSat'
-    })
+async function populateLaunches() {
     console.log("Downloading Launch Data...")
 
-    const response = await axios.post(SPACEX_API_URL, {
+    const response = await axios.post(SPACEX_API_URL, { //GETTING RESPONSE FROM SPACEX API using Axios
         query: {},
         options: {
-            pagination:false,
+            pagination: false,
             populate: [
                 {
                     path: "rocket",
                     select: {
                         name: 1
                     }
-                }, 
+                },
                 {
-                    path:'payloads',
+                    path: 'payloads',
                     select: {
-                        'customers':1
+                        'customers': 1
                     }
                 }
             ]
         }
     })
-    const launchDocs = response.data.docs
-    for (const launchDoc of launchDocs) {
+
+    const launchDocs = response.data.docs //"docs" is what the response sends in 
+
+    for (const launchDoc of launchDocs) { //launchDocs is an Array of JS Objects, launchDoc is an individual object
         const payloads = launchDoc['payloads']
         const customers = payloads.flatMap((payload) => { //REVIEW FLATMAP AGAIN
             return payload['customers']
-        })
+        }) // Getting the Payloads first and then getting customers from them by FlatMapping
 
         const launch = {
             flightNumber: launchDoc.flight_number,
@@ -63,13 +60,30 @@ async function loadLaunchData() {
             upcoming: launchDoc['upcoming'],
             success: launchDoc['success'],
             customers: customers
-        }
+        } // modelling the SPACEXAPI to fit into our launch object
 
-        console.log(`${launch.flightNumber} , ${launch.mission}`)
+        console.log(`${launch.flightNumber} : ${launch.mission}`)
+
+        //TODO: Populate Launches collection:
     }
 }
 
-async function findLaunch(filter) {
+async function loadLaunchData() { //Reduces API Load by doing this and the above function
+    const firstLaunch = await findLaunch({
+        flightNumber: 1,
+        rocket: 'Falcon1',
+        mission: 'FalconSat'
+    }) // Checks for the first launch if it exists , if yes then data is already loaded
+
+    if (firstLaunch) {
+        console.log('Launch Data Loaded')
+    } else {
+        await populateLaunches() // only if that first launch is missing it populates the launches Collection and this will be the only time it does it
+    }
+
+}
+
+async function findLaunch(filter) { //Can find any launch using this filter
     return await launchesDB.findOne(filter)
 }
 
@@ -141,3 +155,9 @@ module.exports = {
     existsLaunchWithId,
     loadLaunchData
 }
+
+
+
+//TODO: To Reduce Api calls what we did is , before loading launch data and populating everytime server starts , we check if the launch already exists in DB by checking if the first rocket in present , IF the firt rocket is present meaning the launches have loaded and hence you dont need to call it everytime . REDUCES LOAD.
+
+//TODO: If that first launch is absent, we load all the Data to the DB once and then don't need to do it again since the next time this LoadLaunch() function triggers, we'd already have 1st rocket and mission so there is no need to load the API again
