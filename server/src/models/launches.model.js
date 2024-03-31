@@ -5,24 +5,9 @@ const axios = require('axios')
 
 const DEFAULT_FLIGHT_NUMBER = 100
 
-const launch = {
-    flightNumber: 100, //exists as flight_number in SPACEX_API
-    mission: 'Kepler Exploration X', //exists as name in SPACEX_API
-    rocket: 'Explorer IS1', //exists as rocket.name in SPACEX_API
-    launchDate: new Date('December 27, 2030'), //exists as date_local in SPACEX_API
-    target: 'Kepler-442 b', //does not exist in API
-    customers: ['NASA', 'ZTM'], //comes from payload.customers for each payload
-    upcoming: true, //exists as upcoming in SPACEX_API
-    success: true //exists as success in SPACEX_API
-}
-
-saveLaunchToDB(launch)
-
 const SPACEX_API_URL = 'https://api.spacexdata.com/v4/launches/query'
 
 async function populateLaunches() {
-    console.log("Downloading Launch Data...")
-
     const response = await axios.post(SPACEX_API_URL, { //GETTING RESPONSE FROM SPACEX API using Axios
         query: {},
         options: {
@@ -47,7 +32,7 @@ async function populateLaunches() {
     const launchDocs = response.data.docs //"docs" is what the response sends in 
 
     for (const launchDoc of launchDocs) { //launchDocs is an Array of JS Objects, launchDoc is an individual object
-        const payloads = launchDoc['payloads']
+        const payloads = launchDoc['payloads'] // returns the payloads array
         const customers = payloads.flatMap((payload) => { //REVIEW FLATMAP AGAIN
             return payload['customers']
         }) // Getting the Payloads first and then getting customers from them by FlatMapping
@@ -62,9 +47,8 @@ async function populateLaunches() {
             customers: customers
         } // modelling the SPACEXAPI to fit into our launch object
 
-        console.log(`${launch.flightNumber} : ${launch.mission}`)
-
         //TODO: Populate Launches collection:
+        await saveLaunchToDB(launch)
     }
 }
 
@@ -93,7 +77,7 @@ async function existsLaunchWithId(launchId) {
     })
 }
 
-async function getLatestFlightNumber() { // Doing this because there is no Increment in MONGODB 
+async function getLatestFlightNumber() { // TODO: Doing this because there is no Increment in MONGODB 
     const latestLaunch = await launchesDB
         .findOne()
         .sort('-flightNumber') //Default Lowest to Highest, add "-" in front for reverse order
@@ -105,20 +89,13 @@ async function getLatestFlightNumber() { // Doing this because there is no Incre
     return latestLaunch.flightNumber
 }
 
-async function getAllLaunches() { // Gets all Launches
+async function getAllLaunches(skip, limit) { // Gets all Launches
     return await launchesDB.find({}, {
         '_id': 0, '__v': 0
-    })
+    }).sort({ flightNumber: 1 }).skip(skip).limit(limit)
 }
 
 async function saveLaunchToDB(launch) { //Saves the Launch to DB
-    const planet = await planets.findOne({ //Finding the planet whose name matches with Launches Target Name
-        keplerName: launch.target // Why? Because of Referential Integrity which is automatically handled in SQL
-    })// 
-
-    if (!planet) {
-        throw new Error('No Matching Planet Found')
-    }
 
     await launchesDB.findOneAndUpdate({
         flightNumber: launch.flightNumber
@@ -128,6 +105,13 @@ async function saveLaunchToDB(launch) { //Saves the Launch to DB
 }
 
 async function scheduleNewLaunch(launch) { // For Scheduling a new launch
+    const planet = await planets.findOne({ //Finding the planet whose name matches with Launches Target Name
+        keplerName: launch.target // Why? Because of Referential Integrity which is automatically handled in SQL
+    })// 
+
+    if (!planet) {
+        throw new Error('No Matching Planet Found')
+    }
 
     const newFlightNumber = await getLatestFlightNumber() + 1 // Sets the new flight number
 
